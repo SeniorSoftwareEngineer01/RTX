@@ -67,13 +67,19 @@ fn app() -> Element {
         }
     });
 
+    // الحل: استخدام input مباشرة بدلاً من insert
     let on_key = move |e: KeyboardEvent| {
         match e.key() {
             Key::Character(s) => {
-                if s == "," {
-                    insert(".");
-                } else if s.chars().all(|c| "0123456789.+-*/()%".contains(c)) {
-                    insert(&s);
+                let owned_s = s.to_string();
+                if owned_s == "," {
+                    let mut current = input();
+                    current.push('.');
+                    input.set(current);
+                } else if owned_s.chars().all(|c| "0123456789.+-*/()%".contains(c)) {
+                    let mut current = input();
+                    current.push_str(&owned_s);
+                    input.set(current);
                 }
             }
             Key::Enter     => calculate(()),
@@ -130,5 +136,3 @@ fn app() -> Element {
         }
     }
 }
-
-
