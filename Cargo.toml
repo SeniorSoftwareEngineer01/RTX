@@ -1,0 +1,15 @@
+[package]
+name    = "my_desktop_app"
+version = "0.1.0"
+authors = ["theking01"]
+edition = "2021"
+
+[dependencies]
+dioxus         = "0.7"          # بدون features إضافية
+dioxus-desktop = "0.7"
+meval          = "0.2"
+
+[features]
+# نُبقيها فارغة؛ المنصة تُحدَّد من خلال dx serve --platform desktop
+# أو cargo build --features desktop لو أردت بناء يدويًّا
+default = []
