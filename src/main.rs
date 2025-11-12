@@ -1,4 +1,4 @@
-// src/main.rs - الجزء 2: الاستيرادات
+// src/main.rs - نسخة تعمل بدون rfd ✅
 use dioxus::prelude::*;
 use meval::eval_str;
 use aes_gcm::{
@@ -11,7 +11,6 @@ use std::fs;
 use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 
-// هيكل بيانات الملف المشفر
 #[derive(Clone, Serialize, Deserialize)]
 struct EncryptedFile {
     name: String,
@@ -24,7 +23,7 @@ struct EncryptedFile {
 fn main() {
     dioxus::launch(app);
 }
-// الجزء 3: دالة App الرئيسية
+
 #[component]
 fn app() -> Element {
     let mut input = use_signal(String::new);
@@ -32,20 +31,18 @@ fn app() -> Element {
     let mut show_vault = use_signal(|| false);
     let mut encrypted_files = use_signal(Vec::<EncryptedFile>::new);
     let mut selected_file_index = use_signal(|| None::<usize>);
+    let mut upload_message = use_signal(String::new);
 
-    // تحميل الملفات المشفرة عند البدء
     use_effect(move || {
         load_encrypted_files(&mut encrypted_files);
     });
 
-    // دالة إدخال النص
     let insert = use_callback(move |txt: &str| {
         let mut s = input();
         s.push_str(txt);
         input.set(s);
     });
 
-    // دالة إدخال العمليات الحسابية
     let insert_op = use_callback(move |op: &str| {
         let op = match op {
             "×" => "*",
@@ -55,20 +52,17 @@ fn app() -> Element {
         insert(op);
     });
 
-    // دالة مسح الكل
     let clear_all = use_callback(move |_| {
         input.set(String::new());
         result.set(String::new());
     });
 
-    // دالة الحذف
     let backspace = use_callback(move |_| {
         let mut s = input();
         s.pop();
         input.set(s);
     });
 
-    // دالة تغيير الإشارة
     let toggle_sign = use_callback(move |_| {
         let s = input();
         if s.trim().is_empty() {
@@ -78,7 +72,6 @@ fn app() -> Element {
         }
     });
 
-    // الجزء 4: دالة الحساب والتحقق من الرقم السري 49
     let calculate = use_callback(move |_| {
         let expr = input().replace('×', "*").replace('÷', "/");
         if expr.trim().is_empty() {
@@ -95,7 +88,6 @@ fn app() -> Element {
                 };
                 result.set(out.clone());
                 
-                // 🔐 إذا كانت النتيجة 49، افتح الخزنة السرية!
                 if out == "49" {
                     show_vault.set(true);
                 }
@@ -104,58 +96,60 @@ fn app() -> Element {
         }
     });
 
-    // معالج لوحة المفاتيح
-    let on_key = move |e: KeyboardEvent| {
-        match e.key() {
-            Key::Character(s) => {
-                let owned_s = s.to_string();
-                if owned_s == "," {
-                    let mut current = input();
-                    current.push('.');
-                    input.set(current);
-                } else if owned_s.chars().all(|c| "0123456789.+-*/()%".contains(c)) {
-                    let mut current = input();
-                    current.push_str(&owned_s);
-                    input.set(current);
+    let on_key = {
+        let mut input = input.clone();
+        let calculate = calculate.clone();
+        let backspace = backspace.clone();
+        
+        move |e: KeyboardEvent| {
+            match e.key() {
+                Key::Character(s) => {
+                    let owned_s = s.to_string();
+                    if owned_s == "," {
+                        let mut current = input();
+                        current.push('.');
+                        input.set(current);
+                    } else if owned_s.chars().all(|c| "0123456789.+-*/()%".contains(c)) {
+                        let mut current = input();
+                        current.push_str(&owned_s);
+                        input.set(current);
+                    }
                 }
+                Key::Enter => calculate(()),
+                Key::Backspace => backspace(()),
+                _ => {}
             }
-            Key::Enter => calculate(()),
-            Key::Backspace => backspace(()),
-            _ => {}
         }
     };
 
-// الجزء 5: دوال إدارة الملفات (رفع، فتح، حذف)
-    
-    // دالة رفع الملفات
-    // دالة رفع الملفات - نسخة محدثة بدون rfd
+    // ✅ دالة رفع الملفات - بدون مربع حوار - مراقبة مجلد
     let upload_file = move |_| {
-        // استخدام مربع حوار سطر الأوامر البسيط
         spawn(async move {
-            // طباعة رسالة للمستخدم
-            println!("📁 اسحب ملف إلى المجلد التالي للتشفير:");
             let vault_dir = get_vault_dir();
             let upload_dir = vault_dir.join("upload");
-            let _ = fs::create_dir_all(&upload_dir);
-            println!("   {}", upload_dir.display());
             
-            // مراقبة المجلد للملفات الجديدة
-            if let Ok(entries) = fs::read_dir(&upload_dir) {
-                for entry in entries.flatten() {
-                    if let Ok(metadata) = entry.metadata() {
-                        if metadata.is_file() {
-                            if let Ok(file_name) = entry.file_name().into_string() {
-                                if let Ok(data) = fs::read(entry.path()) {
-                                    // تشفير الملف
-                                    if let Ok(encrypted_info) = encrypt_file(&file_name, &data).await {
-                                        let mut files = encrypted_files();
-                                        files.push(encrypted_info);
-                                        save_encrypted_files(&files);
-                                        encrypted_files.set(files);
-                                        
-                                        // حذف الملف الأصلي
-                                        let _ = fs::remove_file(entry.path());
-                                        println!("✅ تم تشفير: {}", file_name);
+            // إنشاء مجلد الرفع إذا لم يكن موجوداً
+            if fs::create_dir_all(&upload_dir).is_ok() {
+                upload_message.set(format!("📁 ضع الملفات في المجلد:\n{}", upload_dir.display()));
+                
+                // فحص الملفات في المجلد
+                if let Ok(entries) = fs::read_dir(&upload_dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(metadata) = entry.metadata() {
+                            if metadata.is_file() {
+                                if let Some(file_name) = entry.file_name().to_str() {
+                                    if let Ok(data) = fs::read(entry.path()) {
+                                        // تشفير الملف
+                                        if let Ok(encrypted_info) = encrypt_file(file_name, &data) {
+                                            let mut files = encrypted_files();
+                                            files.push(encrypted_info);
+                                            save_encrypted_files(&files);
+                                            encrypted_files.set(files);
+                                            
+                                            // حذف الملف الأصلي بعد التشفير
+                                            let _ = fs::remove_file(entry.path());
+                                            upload_message.set(format!("✅ تم تشفير: {}", file_name));
+                                        }
                                     }
                                 }
                             }
@@ -166,13 +160,11 @@ fn app() -> Element {
         });
     };
 
-    // دالة فك التشفير والفتح
     let decrypt_and_open = move |index: usize| {
         spawn(async move {
             let files = encrypted_files();
             if let Some(file) = files.get(index) {
-                if let Ok(decrypted_data) = decrypt_file(&file.encrypted_path).await {
-                    // حفظ الملف المفكوك مؤقتاً وفتحه
+                if let Ok(decrypted_data) = decrypt_file(&file.encrypted_path) {
                     let temp_dir = std::env::temp_dir();
                     let temp_path = temp_dir.join(&file.name);
                     if fs::write(&temp_path, decrypted_data).is_ok() {
@@ -183,8 +175,7 @@ fn app() -> Element {
         });
     };
 
-    // دالة حذف الملف
-    let delete_file = move |index: usize| {
+    let mut delete_file = move |index: usize| {
         let mut files = encrypted_files();
         if let Some(file) = files.get(index) {
             let _ = fs::remove_file(&file.encrypted_path);
@@ -195,15 +186,19 @@ fn app() -> Element {
         }
     };
 
+    // دالة فتح مجلد الرفع
+    let open_upload_folder = move |_| {
+        let vault_dir = get_vault_dir();
+        let upload_dir = vault_dir.join("upload");
+        let _ = fs::create_dir_all(&upload_dir);
+        let _ = open::that(&upload_dir);
+    };
 
-// الجزء 6: عرض الواجهة المناسبة
     if show_vault() {
-        // عرض واجهة الخزنة السرية
         rsx! {
             div { 
                 style: "min-height:100vh;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:20px;font-family:system-ui,sans-serif;",
                 
-                // رأس الخزنة
                 div { 
                     style: "max-width:800px;margin:0 auto;background:rgba(255,255,255,0.1);backdrop-filter:blur(20px);padding:20px;border-radius:20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;",
                     h2 { "🔐 الخزنة السرية" }
@@ -215,11 +210,27 @@ fn app() -> Element {
                 }
                 
                 div { style: "max-width:800px;margin:0 auto;",
-                    // زر رفع ملف جديد
-                    button {
-                        style: "width:100%;background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%);border:none;border-radius:16px;padding:16px;color:white;font-size:18px;font-weight:700;cursor:pointer;margin-bottom:20px;",
-                        onclick: move |_| upload_file(()),
-                        "📤 رفع ملف جديد"
+                    
+                    // أزرار الرفع
+                    div { style: "display:flex;gap:10px;margin-bottom:20px;",
+                        button {
+                            style: "flex:1;background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%);border:none;border-radius:16px;padding:16px;color:white;font-size:18px;font-weight:700;cursor:pointer;",
+                            onclick: move |_| open_upload_folder(()),
+                            "📂 فتح مجلد الرفع"
+                        }
+                        button {
+                            style: "flex:1;background:linear-gradient(135deg,#43e97b 0%,#38f9d7 100%);border:none;border-radius:16px;padding:16px;color:white;font-size:18px;font-weight:700;cursor:pointer;",
+                            onclick: move |_| upload_file(()),
+                            "🔄 تحديث القائمة"
+                        }
+                    }
+
+                    // رسالة الرفع
+                    if !upload_message().is_empty() {
+                        div {
+                            style: "background:rgba(67,233,123,0.2);border:2px solid rgba(67,233,123,0.5);border-radius:12px;padding:15px;margin-bottom:20px;text-align:center;font-size:14px;white-space:pre-wrap;",
+                            "{upload_message()}"
+                        }
                     }
 
                     // قائمة الملفات
@@ -229,13 +240,18 @@ fn app() -> Element {
                         if encrypted_files().is_empty() {
                             div { 
                                 style: "text-align:center;padding:40px;opacity:0.6;",
-                                "📂 لا توجد ملفات مشفرة"
+                                "📂 لا توجد ملفات مشفرة",
+                                br {}
+                                br {}
+                                "اضغط 'فتح مجلد الرفع' وضع ملفاتك هناك",
+                                br {}
+                                "ثم اضغط 'تحديث القائمة'"
                             }
                         } else {
                             for (index, file) in encrypted_files().iter().enumerate() {
                                 div {
                                     key: "{index}",
-                                    style: "background:rgba(255,255,255,0.15);border-radius:16px;padding:16px;margin-bottom:12px;cursor:pointer;",
+                                    style: "background:rgba(255,255,255,0.15);border-radius:16px;padding:16px;margin-bottom:12px;cursor:pointer;transition:all 0.3s;",
                                     onclick: move |_| {
                                         if selected_file_index() == Some(index) {
                                             selected_file_index.set(None);
@@ -247,7 +263,7 @@ fn app() -> Element {
                                     div { 
                                         style: "display:flex;align-items:center;gap:12px;",
                                         div { style: "font-size:32px;", "{get_file_icon(&file.original_extension)}" }
-                                        div {
+                                        div { style: "flex:1;",
                                             div { style: "font-weight:700;font-size:16px;", "{file.name}" }
                                             div { style: "opacity:0.7;font-size:13px;", 
                                                 "{format_size(file.size)} • {file.created_at}"
@@ -259,7 +275,7 @@ fn app() -> Element {
                                         div { 
                                             style: "display:flex;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.2);",
                                             button {
-                                                style: "background:#4facfe;border:none;border-radius:10px;padding:10px 20px;color:white;font-weight:600;cursor:pointer;",
+                                                style: "flex:1;background:#4facfe;border:none;border-radius:10px;padding:10px 20px;color:white;font-weight:600;cursor:pointer;",
                                                 onclick: move |e| {
                                                     e.stop_propagation();
                                                     decrypt_and_open(index);
@@ -267,7 +283,7 @@ fn app() -> Element {
                                                 "فتح 📂"
                                             }
                                             button {
-                                                style: "background:#f5576c;border:none;border-radius:10px;padding:10px 20px;color:white;font-weight:600;cursor:pointer;",
+                                                style: "flex:1;background:#f5576c;border:none;border-radius:10px;padding:10px 20px;color:white;font-weight:600;cursor:pointer;",
                                                 onclick: move |e| {
                                                     e.stop_propagation();
                                                     delete_file(index);
@@ -284,18 +300,14 @@ fn app() -> Element {
             }
         }
     } else {
-        // عرض الآلة الحاسبة العادية
         render_calculator(input, result, on_key, clear_all, insert, insert_op, calculate, toggle_sign, backspace)
     }
 }
-// نهاية دالة app
 
-
-// الجزء 7: دالة عرض الآلة الحاسبة
 fn render_calculator(
     input: Signal<String>,
     result: Signal<String>,
-    on_key: impl Fn(KeyboardEvent) + 'static,
+    on_key: impl FnMut(KeyboardEvent) + 'static,
     clear_all: Callback<()>,
     insert: Callback<&'static str>,
     insert_op: Callback<&'static str>,
@@ -310,11 +322,11 @@ fn render_calculator(
     let result_style = "font-size:36px;font-weight:700;text-align:right;word-break:break-all;min-height:42px;";
     let grid_style = "display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;";
     
-    let btn_number = "background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);border-radius:16px;padding:20px;font-size:24px;font-weight:600;color:white;cursor:pointer;";
-    let btn_operator = "background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);border:none;border-radius:16px;padding:20px;font-size:24px;font-weight:700;color:white;cursor:pointer;";
-    let btn_clear = "background:linear-gradient(135deg,#fa709a 0%,#fee140 100%);border:none;border-radius:16px;padding:20px;font-size:22px;font-weight:700;color:white;cursor:pointer;";
-    let btn_equals = "background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%);border:none;border-radius:16px;padding:20px;font-size:28px;font-weight:700;color:white;cursor:pointer;";
-    let btn_special = "background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:16px;padding:20px;font-size:20px;font-weight:600;color:white;cursor:pointer;grid-column:span 2;";
+    let btn_number = "background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);border-radius:16px;padding:20px;font-size:24px;font-weight:600;color:white;cursor:pointer;transition:all 0.2s;";
+    let btn_operator = "background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);border:none;border-radius:16px;padding:20px;font-size:24px;font-weight:700;color:white;cursor:pointer;transition:all 0.2s;";
+    let btn_clear = "background:linear-gradient(135deg,#fa709a 0%,#fee140 100%);border:none;border-radius:16px;padding:20px;font-size:22px;font-weight:700;color:white;cursor:pointer;transition:all 0.2s;";
+    let btn_equals = "background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%);border:none;border-radius:16px;padding:20px;font-size:28px;font-weight:700;color:white;cursor:pointer;transition:all 0.2s;";
+    let btn_special = "background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:16px;padding:20px;font-size:20px;font-weight:600;color:white;cursor:pointer;grid-column:span 2;transition:all 0.2s;";
 
     rsx! {
         div { style: "{root_style}",
@@ -357,34 +369,26 @@ fn render_calculator(
     }
 }
 
-// الجزء 8: دوال التشفير وفك التشفير (AES-256-GCM)
-
-// دالة تشفير الملف
-async fn encrypt_file(file_name: &str, data: &[u8]) -> Result<EncryptedFile, Box<dyn std::error::Error>> {
-    // توليد مفتاح التشفير من كلمة السر "49"
+fn encrypt_file(file_name: &str, data: &[u8]) -> Result<EncryptedFile, Box<dyn std::error::Error>> {
     let mut hasher = Sha256::new();
     hasher.update(b"49_secret_calculator_key_2024_ultra_secure");
     let key = hasher.finalize();
 
     let cipher = Aes256Gcm::new(&key.into());
     
-    // توليد nonce عشوائي (12 بايت)
     let mut nonce_bytes = [0u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    // تشفير البيانات
-    let encrypted_data = cipher.encrypt(nonce, data)?;
+    let encrypted_data = cipher.encrypt(nonce, data)
+        .map_err(|e| format!("خطأ في التشفير: {:?}", e))?;
 
-    // دمج nonce مع البيانات المشفرة
     let mut final_data = nonce_bytes.to_vec();
     final_data.extend_from_slice(&encrypted_data);
 
-    // حفظ الملف المشفر
     let vault_dir = get_vault_dir();
     fs::create_dir_all(&vault_dir)?;
     
-    // اسم ملف عشوائي بامتداد .secure
     let encrypted_filename = format!("{}.secure", generate_random_id());
     let encrypted_path = vault_dir.join(&encrypted_filename);
     fs::write(&encrypted_path, &final_data)?;
@@ -401,11 +405,9 @@ async fn encrypt_file(file_name: &str, data: &[u8]) -> Result<EncryptedFile, Box
     })
 }
 
-// دالة فك تشفير الملف
-async fn decrypt_file(encrypted_path: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn decrypt_file(encrypted_path: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let data = fs::read(encrypted_path)?;
     
-    // استخراج nonce والبيانات المشفرة
     if data.len() < 12 {
         return Err("ملف غير صالح".into());
     }
@@ -413,30 +415,23 @@ async fn decrypt_file(encrypted_path: &str) -> Result<Vec<u8>, Box<dyn std::erro
     let (nonce_bytes, encrypted_data) = data.split_at(12);
     let nonce = Nonce::from_slice(nonce_bytes);
 
-    // توليد نفس المفتاح
     let mut hasher = Sha256::new();
     hasher.update(b"49_secret_calculator_key_2024_ultra_secure");
     let key = hasher.finalize();
 
     let cipher = Aes256Gcm::new(&key.into());
-    
-    // فك التشفير
-    let decrypted_data = cipher.decrypt(nonce, encrypted_data)?;
+    let decrypted_data = cipher.decrypt(nonce, encrypted_data)
+        .map_err(|e| format!("خطأ في فك التشفير: {:?}", e))?;
     
     Ok(decrypted_data)
 }
 
-
-// الجزء 9: الدوال المساعدة (الأخير!)
-
-// الحصول على مسار مجلد الخزنة
 fn get_vault_dir() -> PathBuf {
     let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push(".calculator_vault");
     path
 }
 
-// تحميل قائمة الملفات المشفرة
 fn load_encrypted_files(files: &mut Signal<Vec<EncryptedFile>>) {
     let vault_dir = get_vault_dir();
     let index_path = vault_dir.join("index.json");
@@ -448,7 +443,6 @@ fn load_encrypted_files(files: &mut Signal<Vec<EncryptedFile>>) {
     }
 }
 
-// حفظ قائمة الملفات المشفرة
 fn save_encrypted_files(files: &[EncryptedFile]) {
     let vault_dir = get_vault_dir();
     let _ = fs::create_dir_all(&vault_dir);
@@ -459,7 +453,6 @@ fn save_encrypted_files(files: &[EncryptedFile]) {
     }
 }
 
-// توليد معرّف عشوائي
 fn generate_random_id() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
@@ -467,7 +460,6 @@ fn generate_random_id() -> String {
     format!("{:x}", random_num)
 }
 
-// الحصول على أيقونة الملف حسب الامتداد
 fn get_file_icon(extension: &str) -> &'static str {
     match extension.to_lowercase().as_str() {
         "pdf" => "📄",
@@ -485,7 +477,6 @@ fn get_file_icon(extension: &str) -> &'static str {
     }
 }
 
-// تنسيق حجم الملف
 fn format_size(size: u64) -> String {
     if size < 1024 {
         format!("{} B", size)
@@ -497,5 +488,3 @@ fn format_size(size: u64) -> String {
         format!("{:.2} GB", size as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
-
-// 🎉 نهاية الكود!
